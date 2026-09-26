@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Timeline } from './components/Timeline';
 import { ResultTable } from './components/ResultTable';
-import { SAMPLE_INPUT } from './sample';
+import { ReuseAuditPanel } from './components/ReuseAuditPanel';
+import { REUSE_SAMPLE_INPUT, SAMPLE_INPUT } from './sample';
 import { AnalysisResult, ValidationIssue, analyzeInput, formatClipId } from './lib/analysis';
+import { buildSourceReuseReport, computeSourceReuseAudit } from './lib/reuse';
+import type { SourceReuseAudit } from './lib/reuse';
 
 const ZOOM_LEVELS = [
   { label: '全日览', pixelsPerFrame: 0.0002 },
@@ -29,20 +32,34 @@ function parseJsonInput(text: string) {
   }
 }
 
-function downloadJson(result: AnalysisResult) {
-  const blob = new Blob([`${JSON.stringify(result, null, 2)}\n`], { type: 'application/json' });
+function download(filename: string, payload: unknown) {
+  const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = `dropframe-check-${result.rate.replace('/', '_')}.json`;
+  anchor.download = filename;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+function downloadAnalysis(result: AnalysisResult) {
+  // 旧接缝结论的 JSON 导出逐项不变：直接序列化核对结果，不附加复用审计。
+  download(`dropframe-check-${result.rate.replace('/', '_')}.json`, result);
+}
+
+function downloadReuseReport(audit: SourceReuseAudit) {
+  // 复用报告单独下载，独立于原核对 JSON。
+  download(
+    `source-reuse-audit-${audit.rate.replace('/', '_')}.json`,
+    buildSourceReuseReport(audit)
+  );
 }
 
 export default function App() {
   const [inputText, setInputText] = useState(SAMPLE_INPUT);
   const [lastResult, setLastResult] = useState<AnalysisResult | null>(null);
   const [zoomIndex, setZoomIndex] = useState(1);
+  const [selectedSegmentIndex, setSelectedSegmentIndex] = useState<number | null>(null);
 
   const response = useMemo(() => {
     const parsed = parseJsonInput(inputText);
@@ -68,6 +85,17 @@ export default function App() {
   const stale = !response.ok;
   const issues = response.ok ? [] : response.issues;
 
+  // 来源复用审计是只读派生视图：与核对结果共享同一份整数帧分析，绝不回写。
+  const shownReuseAudit = useMemo(
+    () => (shownResult ? computeSourceReuseAudit(shownResult) : null),
+    [shownResult]
+  );
+
+  // 新有效输入原子替换两套视图后，旧的复用段选择不再适用，必须清掉。
+  useEffect(() => {
+    setSelectedSegmentIndex(null);
+  }, [shownResult]);
+
   async function importFile(file: File | undefined) {
     if (!file) return;
     setInputText(await file.text());
@@ -81,12 +109,13 @@ export default function App() {
           <h1>丢帧时码合版核对台</h1>
           <p className="subtitle">
             时码先转换为整数帧，再计算 recordOut、空隙与重叠；标尺和表格引用同一份不可变结果。
+            来源复用审计单独只读核对同一批原始画面是否被重复使用。
           </p>
         </div>
         <div className={`status-card ${stale ? 'status-stale' : 'status-valid'}`}>
           <span className="status-dot" />
           <strong>{stale ? '当前结论已撤销' : '当前输入有效'}</strong>
-          <small>非法编辑不会替换上次合法结果</small>
+          <small>非法编辑不会替换上次合法结果，旧接缝结论与复用审计均标记为过期</small>
         </div>
       </header>
 
@@ -110,15 +139,30 @@ export default function App() {
                 />
               </label>
               <button type="button" className="button secondary" onClick={() => setInputText(SAMPLE_INPUT)}>
-                示例
+                接缝示例
+              </button>
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() => setInputText(REUSE_SAMPLE_INPUT)}
+              >
+                复用示例
               </button>
               <button
                 type="button"
                 className="button primary"
                 disabled={!activeResult}
-                onClick={() => activeResult && downloadJson(activeResult)}
+                onClick={() => activeResult && downloadAnalysis(activeResult)}
               >
                 导出核对 JSON
+              </button>
+              <button
+                type="button"
+                className="button primary"
+                disabled={!activeResult}
+                onClick={() => activeResult && downloadReuseReport(computeSourceReuseAudit(activeResult))}
+              >
+                下载复用报告
               </button>
             </div>
           </div>
@@ -150,67 +194,82 @@ export default function App() {
             <li>59.94：每个非整十分钟跳过 <code>;00</code> 至 <code>;03</code>。</li>
             <li>整十分钟和小时边界不跳帧，不能按普通时分秒乘 30/60。</li>
             <li>recordOut = recordIn + (sourceOut − sourceIn)，触碰 24 小时即拒绝。</li>
+            <li>来源复用只看 sourceIn/sourceOut 的整数帧投影，时码仅显示，日末不回绕。</li>
           </ul>
         </div>
       </section>
 
       {shownResult && (
-        <section className="panel result-panel">
-          <div className="panel-heading result-heading">
-            <div>
-              <h2>核对结果</h2>
-              <p>
-                全局 rate <code>{shownResult.rate}</code> · 日帧长{' '}
-                <strong>{shownResult.dayFrames.toLocaleString('zh-CN')}</strong> ·{' '}
-                {shownResult.clips.length} 个片段 · {shownResult.breaks.length} 处断点
-                {stale && <span className="stale-note">（以下为上次合法结果，不对应当前文本）</span>}
-              </p>
+        <>
+          <section className="panel result-panel">
+            <div className="panel-heading result-heading">
+              <div>
+                <h2>核对结果</h2>
+                <p>
+                  全局 rate <code>{shownResult.rate}</code> · 日帧长{' '}
+                  <strong>{shownResult.dayFrames.toLocaleString('zh-CN')}</strong> ·{' '}
+                  {shownResult.clips.length} 个片段 · {shownResult.breaks.length} 处断点
+                  {stale && <span className="stale-note">（以下为上次合法结果，旧接缝结论已过期，不对应当前文本）</span>}
+                </p>
+              </div>
+              <div className="zoom-controls" aria-label="缩放标尺">
+                <button
+                  type="button"
+                  className="button icon"
+                  disabled={zoomIndex === 0}
+                  onClick={() => setZoomIndex((value) => Math.max(0, value - 1))}
+                >
+                  −
+                </button>
+                <span>{ZOOM_LEVELS[zoomIndex].label}</span>
+                <button
+                  type="button"
+                  className="button icon"
+                  disabled={zoomIndex === ZOOM_LEVELS.length - 1}
+                  onClick={() => setZoomIndex((value) => Math.min(ZOOM_LEVELS.length - 1, value + 1))}
+                >
+                  +
+                </button>
+              </div>
             </div>
-            <div className="zoom-controls" aria-label="缩放标尺">
-              <button
-                type="button"
-                className="button icon"
-                disabled={zoomIndex === 0}
-                onClick={() => setZoomIndex((value) => Math.max(0, value - 1))}
-              >
-                −
-              </button>
-              <span>{ZOOM_LEVELS[zoomIndex].label}</span>
-              <button
-                type="button"
-                className="button icon"
-                disabled={zoomIndex === ZOOM_LEVELS.length - 1}
-                onClick={() => setZoomIndex((value) => Math.min(ZOOM_LEVELS.length - 1, value + 1))}
-              >
-                +
-              </button>
-            </div>
-          </div>
 
-          {shownResult.firstBreak ? (
-            <div className="first-break-summary" role="status">
-              <strong>第一处真实拼接断点</strong>
-              <span>
-                {shownResult.firstBreak.kind === 'gap' ? '空隙' : '重叠'}：片段{' '}
-                <code>{formatClipId(shownResult.firstBreak.afterClipId)}</code> 与{' '}
-                <code>{formatClipId(shownResult.firstBreak.beforeClipId)}</code> 之间，
-                {shownResult.firstBreak.start.timecode} → {shownResult.firstBreak.end.timecode}，共{' '}
-                {shownResult.firstBreak.durationFrames} 帧。
-              </span>
-            </div>
-          ) : (
-            <div className="contiguous-summary" role="status">
-              所有片段按录制位置首尾相接，未发现空隙或重叠。
-            </div>
+            {shownResult.firstBreak ? (
+              <div className="first-break-summary" role="status">
+                <strong>第一处真实拼接断点</strong>
+                <span>
+                  {shownResult.firstBreak.kind === 'gap' ? '空隙' : '重叠'}：片段{' '}
+                  <code>{formatClipId(shownResult.firstBreak.afterClipId)}</code> 与{' '}
+                  <code>{formatClipId(shownResult.firstBreak.beforeClipId)}</code> 之间，
+                  {shownResult.firstBreak.start.timecode} → {shownResult.firstBreak.end.timecode}，共{' '}
+                  {shownResult.firstBreak.durationFrames} 帧。
+                </span>
+              </div>
+            ) : (
+              <div className="contiguous-summary" role="status">
+                所有片段按录制位置首尾相接，未发现空隙或重叠；仍需下方来源复用审计确认原始画面是否被重复使用。
+              </div>
+            )}
+
+            <Timeline
+              result={shownResult}
+              reuseAudit={shownReuseAudit}
+              selectedSegmentIndex={selectedSegmentIndex}
+              onSelectSegment={setSelectedSegmentIndex}
+              pixelsPerFrame={ZOOM_LEVELS[zoomIndex].pixelsPerFrame}
+              active={!stale}
+            />
+            <ResultTable clips={shownResult.clips} />
+          </section>
+
+          {shownReuseAudit && (
+            <ReuseAuditPanel
+              audit={shownReuseAudit}
+              selectedSegmentIndex={selectedSegmentIndex}
+              onSelectSegment={setSelectedSegmentIndex}
+              stale={stale}
+            />
           )}
-
-          <Timeline
-            result={shownResult}
-            pixelsPerFrame={ZOOM_LEVELS[zoomIndex].pixelsPerFrame}
-            active={!stale}
-          />
-          <ResultTable clips={shownResult.clips} />
-        </section>
+        </>
       )}
 
       {!shownResult && (
