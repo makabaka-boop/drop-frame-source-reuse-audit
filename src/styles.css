@@ -477,6 +477,124 @@ tr:last-child td {
   color: #fde047;
 }
 
+.reuse-panel {
+  margin-top: 18px;
+  padding: 20px;
+}
+
+.reuse-stale {
+  opacity: 0.55;
+}
+
+.reuse-empty {
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: rgba(6, 95, 70, 0.18);
+  color: #a7f3d0;
+}
+
+.reuse-axis {
+  position: relative;
+  height: 34px;
+  margin-bottom: 14px;
+  border: 1px solid rgba(100, 116, 139, 0.3);
+  border-radius: 10px;
+  background: #07101d;
+  overflow: hidden;
+}
+
+.reuse-axis-segment {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  padding: 0;
+  border: 1px solid #c084fc;
+  border-radius: 6px;
+  background: rgba(192, 132, 252, 0.35);
+  cursor: pointer;
+  transition: background 120ms ease, transform 120ms ease;
+}
+
+.reuse-axis-segment:hover {
+  background: rgba(192, 132, 252, 0.6);
+}
+
+.reuse-axis-selected {
+  background: rgba(192, 132, 252, 0.85);
+  box-shadow: 0 0 0 2px rgba(192, 132, 252, 0.45);
+}
+
+.reuse-segment-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.reuse-segment {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 14px;
+  background: rgba(30, 41, 59, 0.6);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.88rem;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.reuse-segment:hover {
+  border-color: rgba(192, 132, 252, 0.6);
+}
+
+.reuse-selected {
+  border-color: #c084fc;
+  box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.22);
+}
+
+.reuse-segment-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.reuse-clip-ids {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  color: #a4b0c3;
+}
+
+.reuse-placements {
+  display: grid;
+  gap: 4px;
+}
+
+.reuse-placement {
+  color: #a4b0c3;
+  font-size: 0.84rem;
+}
+
+.reuse-highlight-frame {
+  fill: rgba(192, 132, 252, 0.16);
+  stroke: #c084fc;
+  stroke-width: 2;
+  stroke-dasharray: 6 3;
+}
+
+.reuse-highlight-band {
+  fill: rgba(192, 132, 252, 0.55);
+  stroke: #c084fc;
+  stroke-width: 1;
+}
+
 .empty-state {
   text-align: center;
   padding: 54px 20px;

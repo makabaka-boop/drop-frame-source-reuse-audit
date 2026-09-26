@@ -1,15 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AnalysisResult, formatClipId } from '../lib/analysis';
+import { AnalysisResult, ClipId, formatClipId } from '../lib/analysis';
 import { formatFrame } from '../lib/timecode';
 import { computeTimelineTicks } from '../lib/timeline';
+
+export interface ReuseHighlight {
+  clipId: ClipId;
+  startFrame: number;
+  endFrame: number;
+}
 
 interface TimelineProps {
   result: AnalysisResult;
   pixelsPerFrame: number;
   active: boolean;
+  reuseHighlights?: ReuseHighlight[];
 }
 
-export function Timeline({ result, pixelsPerFrame, active }: TimelineProps) {
+export function Timeline({ result, pixelsPerFrame, active, reuseHighlights = [] }: TimelineProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ scrollLeft: 0, width: 1200 });
   const width = Math.max(1, result.dayFrames * pixelsPerFrame);
@@ -40,6 +47,20 @@ export function Timeline({ result, pixelsPerFrame, active }: TimelineProps) {
       block: 'nearest'
     });
   }, [active, result.firstBreak]);
+
+  // 复用证据联动：选中来源段后，把录制时间线上第一个落点滚入视野。
+  const highlightKey = reuseHighlights
+    .map((highlight) => `${highlight.startFrame}:${highlight.endFrame}`)
+    .join('|');
+  useEffect(() => {
+    if (reuseHighlights.length === 0) return;
+    document.getElementById('timeline-reuse-highlight')?.scrollIntoView({
+      behavior: 'smooth',
+      inline: 'center',
+      block: 'nearest'
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlightKey]);
 
   const ticks = useMemo(
     () => computeTimelineTicks(pixelsPerFrame, viewport, result.dayFrames),
@@ -110,6 +131,38 @@ export function Timeline({ result, pixelsPerFrame, active }: TimelineProps) {
                   {formatClipId(clip.id)}
                 </text>
               )}
+            </g>
+          );
+        })}
+
+        {reuseHighlights.map((highlight, index) => {
+          const left = x(highlight.startFrame);
+          const highlightWidth = Math.max(2, (highlight.endFrame - highlight.startFrame) * pixelsPerFrame);
+          return (
+            <g
+              key={`reuse-${String(highlight.clipId)}-${index}`}
+              id={index === 0 ? 'timeline-reuse-highlight' : undefined}
+            >
+              <rect
+                x={left}
+                y={44}
+                width={highlightWidth}
+                height={36}
+                className="reuse-highlight-frame"
+              >
+                <title>{`复用落点：片段 ${formatClipId(highlight.clipId)}`}</title>
+              </rect>
+              <rect
+                x={left}
+                y={100}
+                width={highlightWidth}
+                height={12}
+                className="reuse-highlight-band"
+              >
+                <title>
+                  {`复用落点：片段 ${formatClipId(highlight.clipId)}，录制帧 ${highlight.startFrame} – ${highlight.endFrame}`}
+                </title>
+              </rect>
             </g>
           );
         })}

@@ -5,6 +5,7 @@ import {
   parseTimecode,
   toFrameTimecode
 } from './timecode';
+import { auditSourceReuse, type SourceReuseReport } from './reuse';
 
 export type ClipId = string | number;
 
@@ -71,7 +72,7 @@ export interface AnalysisResult {
 }
 
 export type AnalysisResponse =
-  | { ok: true; result: AnalysisResult }
+  | { ok: true; result: AnalysisResult; reuseReport: SourceReuseReport }
   | { ok: false; issues: ValidationIssue[] };
 
 interface ValidatedClip {
@@ -373,15 +374,16 @@ export function analyzeInput(rawInput: unknown): AnalysisResponse {
     }
   }
 
-  return {
-    ok: true,
-    result: {
-      schemaVersion: 1,
-      rate,
-      dayFrames: DAY_FRAMES[rate],
-      clips: analyzedClips,
-      breaks,
-      firstBreak: breaks[0] ?? null
-    }
+  const result: AnalysisResult = {
+    schemaVersion: 1,
+    rate,
+    dayFrames: DAY_FRAMES[rate],
+    clips: analyzedClips,
+    breaks,
+    firstBreak: breaks[0] ?? null
   };
+
+  // 来源复用审计与接缝结论同生同灭：一份有效分析同时携带两套只读视图。
+  // result 本身不新增字段，原 JSON 导出逐项不变；复用报告单独序列化下载。
+  return { ok: true, result, reuseReport: auditSourceReuse(result) };
 }
